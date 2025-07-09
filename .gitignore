@@ -1,0 +1,20 @@
+# Python-spezifische Ignorierungen
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+venv/
+venv-crawl/ # Unser spezifischer VENV-Ordner
+
+# Daten-spezifische Ignorierungen
+data/processed_data/   # Ignoriert den gesamten 'processed_data' Ordner
+data/raw_data/web_crawls/ # Ignoriert alle rohen Web-Crawls (falls direkt gespeichert)
+data/raw_data/repo_clones/ # Ignoriert alle geklonten Repositories
+
+# Log-Dateien
+logs/                  # Ignoriert den gesamten 'logs' Ordner
+
+# Betriebssystem-spezifische Ignorierungen
+.DS_Store # macOS Finder-Dateien
+.env # Umgebungsvariablen

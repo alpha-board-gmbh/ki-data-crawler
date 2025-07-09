@@ -13,6 +13,7 @@ Wir lesen der Reihe nach ein:
 ## 1. Projektstruktur
 Die Struktur des Projekts ist wie folgt organisiert:
 
+```text
 ki_data_collector/                # Hauptverzeichnis  
 ├── .git/                         # Versteckter Ordner: Von Git verwaltete Versionskontrolle  
 ├── README.md                     # Diese Datei: Projektbeschreibung und Anleitung  
@@ -35,6 +36,7 @@ ki_data_collector/                # Hauptverzeichnis
 ├── logs/                         # Hier werden Log-Dateien der Skripte gespeichert  
 │   └── [PROJECT_NAME]_crawler_output.log # - Beispiel: zephyr_crawler_output.log  
 └── venv-crawl/                   # Virtuelle Python-Umgebung für dieses Projekt  
+```
 
 *(Hinweis: `[PROJECT_NAME]` ist ein Platzhalter, der im Skript durch den tatsächlichen Projektnamen ersetzt wird, z.B. "zephyr". Versteckte Dateien und Ordner (wie `.git/`) beginnen mit einem Punkt.)*
 
@@ -44,7 +46,7 @@ Die Installation des Projekts erfolgt idealerweise über Git.
 ### Projekt klonen und initiales Setup
 
 1.  **Klonen Sie das Repository:**
-    Navigieren Sie zum gewünschten Speicherort auf Ihrem System und klonen Sie das Git-Repository. Ersetzen Sie `YOUR_GITHUB_REPO_URL` durch die tatsächliche URL Ihres GitHub-Repositorys (z.B. `https://github.com/alpha-board-org/ki_data_collector.git`).
+    Navigieren Sie zum gewünschten Speicherort auf Ihrem System und klonen Sie das Git-Repository.
 
     ```bash
     git clone https://github.com/alpha-board-gmbh/ki-data-crawler.git 

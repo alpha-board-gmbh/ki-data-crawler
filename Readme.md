@@ -1,5 +1,5 @@
-# Zephyr LLM Projekt
-Dieses Repository enthält alle Skripte, Daten und Konfigurationen für das Fine-Tuning eines Large Language Models (LLM) auf der Basis von Zephyr OS. Das Ziel ist es, ein spezialisiertes LLM zu entwickeln, das bei Programmier- und Hardware-Design-Aufgaben im Kontext von Zephyr OS unterstützen kann. Dies hier ist der Ordner, wo ein Crawler in Python die Datenbasis zusammensuchen soll.
+# Website Crawler für Datensammeln im Kontext von Zephyr LLM Projekt
+Dieses Repository enthält alle Skripte, Daten und Konfigurationen, um Daten für das Fine-Tuning eines Large Language Models (LLM) auf der Basis von Zephyr OS zu sammeln. Das Ziel ist es, ein spezialisiertes LLM zu entwickeln, das bei Programmier- und Hardware-Design-Aufgaben im Kontext von Zephyr OS unterstützen kann. Dies hier ist der Ordner, wo ein Crawler in Python die Datenbasis zusammensuchen soll.
 
 Wir lesen der Reihe nach ein:
 
@@ -13,7 +13,7 @@ Wir lesen der Reihe nach ein:
 ## 1. Projektstruktur
 Die Struktur des Projekts ist wie folgt organisiert:
 
-ki_data_collector/  
+ki_data_collector/                # Hauptverzeichnis  
 ├── .git/                         # Versteckter Ordner: Von Git verwaltete Versionskontrolle  
 ├── README.md                     # Diese Datei: Projektbeschreibung und Anleitung  
 ├── setup_project.sh              # Skript zum initialen Setup der Umgebung und Installation von Bibliotheken  
@@ -47,7 +47,7 @@ Die Installation des Projekts erfolgt idealerweise über Git.
     Navigieren Sie zum gewünschten Speicherort auf Ihrem System und klonen Sie das Git-Repository. Ersetzen Sie `YOUR_GITHUB_REPO_URL` durch die tatsächliche URL Ihres GitHub-Repositorys (z.B. `https://github.com/alpha-board-org/ki_data_collector.git`).
 
     ```bash
-    git clone YOUR_GITHUB_REPO_URL ki_data_collector 
+    git clone https://github.com/alpha-board-gmbh/ki-data-crawler.git 
     cd ki_data_collector
     ```
 

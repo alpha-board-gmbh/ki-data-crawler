@@ -31,6 +31,24 @@ unreachable_urls_file = os.path.join(
     os.path.dirname(__file__), "..", "..", "data", "processed_data", f"{PROJECT_NAME}_docs_unreachable_urls.jsonl"
 )
 
+# NEU: Pfad zur Datei für gesammelte GitHub-Links
+github_links_output_file = os.path.join(
+    os.path.dirname(__file__), "..", "..", "data", "processed_data", f"{PROJECT_NAME}_github_links.jsonl"
+)
+
+# NEU: Domains, die als GitHub-Links gesammelt werden sollen
+GITHUB_DOMAINS = ["github.com", "raw.githubusercontent.com"]
+# NEU: Dateierweiterungen, die von GitHub-Links interessant sind
+GITHUB_FILE_EXTENSIONS = (
+    '.c', '.h', '.cpp', '.hpp', # C/C++ Source and Headers
+    '.dts', '.dtsi',           # Device Tree Source and Includes
+    'Kconfig', '.kconfig',     # Kconfig files
+    '.cmake', 'CMakeLists.txt', # CMake build files
+    '.py',                     # Python scripts
+    '.md', '.rst',             # Markdown/reStructuredText
+    '.txt', '.json', '.yaml', '.yml' # Andere relevante Textdateien
+)
+
 # Dateierweiterungen, die ignoriert werden sollen
 IGNORED_EXTENSIONS = (
     '.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', # Bilder
@@ -60,6 +78,7 @@ HEADERS = {
 os.makedirs(os.path.dirname(jsonl_output_file), exist_ok=True)
 os.makedirs(os.path.dirname(log_file_path), exist_ok=True)
 os.makedirs(os.path.dirname(unreachable_urls_file), exist_ok=True)
+os.makedirs(os.path.dirname(github_links_output_file), exist_ok=True)
 
 
 # --- Logging-Setup ---
@@ -78,7 +97,8 @@ visited_urls = set()
 urls_to_visit = deque()
 newly_processed_count = 0 
 failed_attempts = {} 
-unreachable_urls = set() 
+unreachable_urls = set()
+collected_github_links = set() # NEU: Für Links zu GitHub-Dateien
 
 # Verwendung einer requests.Session für effizientere HTTP-Anfragen
 session = requests.Session()
@@ -122,6 +142,21 @@ if os.path.exists(jsonl_output_file):
                             logger.warning(f"JSON-Fehler in Zeile {line_unreachable_num+1} von {unreachable_urls_file}. Ignoriere Zeile.")
             except Exception as e:
                 logger.error(f"FEHLER beim Laden der unerreichbaren URLs: {e}")
+        
+        # NEU: Lade bereits gesammelte GitHub-Links, falls vorhanden
+        if os.path.exists(github_links_output_file):
+            logger.info(f"Lade bereits gesammelte GitHub-Links aus '{github_links_output_file}'.")
+            try:
+                with open(github_links_output_file, 'r', encoding='utf-8') as f_github_links:
+                    for line_github_num, line_github in enumerate(f_github_links):
+                        try:
+                            github_link_data = json.loads(line_github)
+                            if 'url' in github_link_data:
+                                collected_github_links.add(github_link_data['url'])
+                        except json.JSONDecodeError:
+                            logger.warning(f"JSON-Fehler in Zeile {line_github_num+1} von {github_links_output_file}. Ignoriere Zeile.")
+            except Exception as e:
+                logger.error(f"FEHLER beim Laden der GitHub-Links: {e}")
 
         for url in visited_urls:
             urls_to_visit.append(url)
@@ -143,10 +178,13 @@ if os.path.exists(jsonl_output_file):
         urls_to_visit.append(base_url)
         newly_processed_count = 0
         failed_attempts.clear()
-        unreachable_urls.clear() 
+        unreachable_urls.clear()
+        collected_github_links.clear()
 else:
     logger.info("Keine bestehende Datei gefunden. Starte Crawling neu.")
     urls_to_visit.append(base_url)
+    # NEU: collected_github_links muss auch hier initialisiert werden (was es als leeres Set schon ist, aber zur Klarheit)
+    collected_github_links.clear() # Sicherstellen, dass bei Neustart leer
 
 # --- Initialer Status-Output auf Konsole (für sofortiges Feedback) ---
 print("\n--- Aktueller Crawler-Status ---")
@@ -328,44 +366,62 @@ while urls_to_visit:
                 logger.info(f"Fortschritts-Update: Neu verarbeitete Seiten (im aktuellen Lauf): {newly_processed_count} | URLs in der Warteschlange (urls_to_visit): {len(urls_to_visit)} | Gesamt bereits in Datei (visited_urls): {len(visited_urls)}")
         
         # ... (Rest des Codes - Link-Discovery und Error-Hanndling) ...
-        
+        # === Link-Discovery (IMMER ausführen nach erfolgreichem Download & Parse) ===
         for link in soup.find_all('a', href=True):
             href = link['href']
             full_url = urljoin(current_url, href)
 
-            path_without_query_fragment = urlparse(full_url).path
+            # Parse die URL, um Domain und Erweiterung zu prüfen
+            parsed_full_url = urlparse(full_url)
+            full_url_domain = parsed_full_url.netloc
+            path_without_query_fragment = parsed_full_url.path
             _, file_extension = os.path.splitext(path_without_query_fragment)
             file_extension = file_extension.lower()
+            
+            # Spezielle Behandlung für Kconfig-Dateien ohne typische Dateierweiterung
+            if not file_extension and '.' not in os.path.basename(path_without_query_fragment): 
+                if 'kconfig' in os.path.basename(path_without_query_fragment).lower():
+                    file_extension = 'kconfig' 
 
-            if (urlparse(full_url).netloc == urlparse(base_url).netloc and
-                full_url.startswith(base_url) and
-                file_extension not in IGNORED_EXTENSIONS and 
-                "#" not in full_url):
-                
-                if rp.can_fetch(HEADERS['User-Agent'], full_url): 
-                    if full_url not in visited_urls and full_url not in urls_to_visit: 
+            # Prüfen, ob es ein Link zu unserer Zephyr-Doku ist
+            is_zephyr_doc_link = (full_url_domain == urlparse(base_url).netloc and full_url.startswith(base_url))
+            
+            # Prüfen, ob es ein Link zu GitHub ist (und relevant)
+            is_github_link = False
+            if full_url_domain in GITHUB_DOMAINS:
+                # Prüfe auf relevante Dateiendungen oder spezielle Dateinamen (wie 'Kconfig')
+                if file_extension in GITHUB_FILE_EXTENSIONS or \
+                   (not file_extension and 'kconfig' in os.path.basename(path_without_query_fragment).lower()):
+                    is_github_link = True
+
+            # Externe Links, die nicht GitHub sind, und intern ignorierte Dateierweiterungen oder Anker
+            if file_extension in IGNORED_EXTENSIONS or "#" in full_url:
+                continue # Dies ignoriert bekannte unerwünschte Formate und Ankerlinks
+
+            # Logik zum Hinzufügen zu urls_to_visit ODER collected_github_links
+            if is_zephyr_doc_link:
+                # Nur hinzufügen, wenn die URL NOCH NICHT in visited_urls ist UND noch nicht in urls_to_visit ist
+                if full_url not in visited_urls and full_url not in urls_to_visit: 
+                    if rp.can_fetch(HEADERS['User-Agent'], full_url): 
                         urls_to_visit.append(full_url)
-                else:
-                    logger.info(f"Link {full_url} wird aufgrund von robots.txt-Regeln nicht gecrawlt.")
-    
-    except requests.exceptions.RequestException as e:
-        logger.error(f"FEHLER beim Crawling (HTTP/Network) von {current_url}: {e}")
-        
-        failed_attempts[current_url] = failed_attempts.get(current_url, 0) + 1
-        
-        if failed_attempts[current_url] < MAX_RETRIES:
-            urls_to_visit.append(current_url) 
-            logger.info(f"URL {current_url} erneut zur Warteschlange hinzugefügt ({failed_attempts[current_url]}/{MAX_RETRIES} Versuch).")
-            time.sleep(5) 
-        else:
-            logger.warning(f"URL {current_url} hat maximale Wiederholungsversuche ({MAX_RETRIES}) erreicht. Ignoriere sie dauerhaft.")
-            unreachable_urls.add(current_url) 
-            visited_urls.add(current_url) 
-        
-    except Exception as e:
-        logger.error(f"UNERWARTETER FEHLER für {current_url}: {e}")
-        visited_urls.add(current_url)
-        unreachable_urls.add(current_url) 
+                    else:
+                        logger.info(f"Link {full_url} (Zephyr-Doku) wird aufgrund von robots.txt-Regeln nicht gecrawlt.")
+            elif is_github_link:
+                # Nur hinzufügen, wenn der Link noch nicht gesammelt wurde
+                if full_url not in collected_github_links:
+                    github_data_segment = {
+                        "url": full_url,
+                        "source_page": current_url, # Woher der Link kommt
+                        "timestamp_collected": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                        "file_extension": file_extension # Dateierweiterung zur späteren Verarbeitung
+                    }
+                    with open(github_links_output_file, 'a', encoding='utf-8') as f_github_links:
+                        f_github_links.write(json.dumps(github_data_segment, ensure_ascii=False) + '\n')
+                    collected_github_links.add(full_url)
+                    logger.info(f"GitHub-Link gesammelt: {full_url} (von {current_url})")
+            else:
+                # Alle anderen externen Links werden geloggt (später vielleicht aus, um das Log sauber zu halten)
+                logger.debug(f"Ignoriere externen Link (nicht Zephyr, nicht GitHub): {full_url}")
 
 
 # --- Finale Aktionen nach dem Crawling ---
@@ -387,3 +443,4 @@ else:
 
 print(f"Crawling der Zephyr-Dokumentation abgeschlossen. {len(visited_urls)} URLs gesichert.")
 print(f"Details finden Sie in der Log-Datei: {log_file_path}")
+print(f"Gesammelte GitHub-Links: {len(collected_github_links)}. Details in {os.path.basename(github_links_output_file)}")

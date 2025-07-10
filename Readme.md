@@ -70,19 +70,35 @@ Das `setup_project.sh`-Skript kümmert sich bereits um die Erstellung und erste 
 Nachdem das `setup_project.sh`-Skript durchgelaufen ist, ist die `venv-crawl` im aktuellen Terminal aktiv. Wenn Sie ein neues Terminalfenster öffnen, müssen Sie die virtuelle Umgebung dort erneut aktivieren:
 
 ```bash
-source venv-crawl/bin/activate # Aktiviert die virtuelle Umgebung
+source venv-crawl/bin/activate
 ```
 
 ### Wie erkenne ich, ob das Venv aktiv ist?
 Nach der Aktivierung sollte der Name Ihrer virtuellen Umgebung (hier: (venv-crawl)) in Ihrer Terminal-Eingabeaufforderung erscheinen, z.B.:
 
-> (venv-crawl) DeinBenutzer@DeinRechner ki_data_collector %
+```bash
+(venv-crawl) DeinBenutzer@DeinRechner ki_data_collector %
+````
 
 Sie können dies auch mit den folgenden Befehlen überprüfen:
 
 ```which python```: Zeigt den Pfad zum Python-Interpreter innerhalb des aktiven Venvs an.
 
 ```echo $VIRTUAL_ENV```: Gibt den Pfad zum Venv-Stammverzeichnis aus, wenn aktiv.
+
+### Benötigte Python-Bibliotheken installieren
+Die Installation der Python-Bibliotheken erfolgt automatisch durch das setup_project.sh-Skript aus der requirements.txt-Datei.
+
+**Hinweis für Debian/Ubuntu-Systeme**: Auf Debian- oder Ubuntu-basierten Systemen ist das venv-Modul für Python möglicherweise nicht standardmäßig installiert. Sollte die Erstellung der virtuellen Umgebung mit einem Fehler fehlschlagen, der auf ensurepip oder python3-venv hinweist, müssen Sie das entsprechende Paket manuell installieren. Zum Beispiel für Python 3.12:
+
+```bash
+sudo apt update
+sudo apt install python3.12-venv
+```
+
+(Passen Sie die Python-Version (3.12) bei Bedarf an die auf Ihrem System installierte Version an.)
+
+Nach der Installation dieses Pakets können Sie das ./setup_project.sh-Skript erneut ausführen. Es ist ratsam, den fehlerhaften venv-crawl-Ordner vor dem erneuten Ausführen des Setup-Skripts zu löschen (```rm -rf venv-crawl```).
 
 ## 4. Crawler-Skript für Zephyr-Dokumentation
 Der Web-Crawler, der für die Zephyr-Dokumentation verwendet wird, befindet sich nun unter scripts/crawler/web_crawler.py. Der Crawler sucht in dieser Version nur nach Text, nicht nach Bildern etc. (das liegt daran, dass wir derzeit nur ein Textmodell fine-tunen wollen, kein Modell für Text und Bild). In späteren Versionen sammeln wir vielleicht auch alle Bilder mit ein.

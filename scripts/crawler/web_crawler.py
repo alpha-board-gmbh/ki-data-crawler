@@ -56,14 +56,16 @@ os.makedirs(os.path.dirname(unreachable_urls_file), exist_ok=True)
 
 
 # --- Logging-Setup ---
-logger = logging.getLogger('web_crawler_logger') # Einen eindeutigen Namen für den Logger
-logger.setLevel(logging.INFO) 
-logger.propagate = False # Verhindert, dass Logs an übergeordnete Logger gesendet werden
-
-if not logger.handlers: # Sicherstellen, dass Handler nur einmal hinzugefügt werden
-    file_handler = logging.FileHandler(log_file_path, encoding='utf-8')
-    file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
-    logger.addHandler(file_handler)
+# Konfiguriere den Root-Logger, um alle Nachrichten in die Log-Datei zu schreiben
+logging.basicConfig(
+    level=logging.INFO, # Logge alle Meldungen ab INFO-Level
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(log_file_path, encoding='utf-8')
+    ]
+)
+# Holen Sie sich eine Instanz des Loggers, den Sie im Skript verwenden werden
+logger = logging.getLogger('web_crawler_logger') # Oder einfach logging (für den Root-Logger)
 
 
 # --- Globale Crawler-Variablen ---

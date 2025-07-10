@@ -9,19 +9,16 @@ import time
 import logging
 
 # --- Projekt-Konfiguration ---
-PROJECT_NAME = "zephyr" # <--- HIER DEN PROJEKTNAMEN FESTLEGEN (z.B. "zephyr", "arduino", "my_company")
+PROJECT_NAME = "zephyr-docs" # <--- HIER DEN PROJEKTNAMEN FESTLEGEN (z.B. "zephyr", "arduino", "my_company")
 base_url = "https://docs.zephyrproject.org/" # <--- Basis-URL für diesen spezifischen Crawl
 
 # --- Datei- und Ordnerpfade ---
-# Pfad zur JSONL-Ausgabedatei für gesammelte Segmente
 jsonl_output_file = os.path.join(
     os.path.dirname(__file__), "..", "..", "data", "processed_data", f"{PROJECT_NAME}_docs_segments.jsonl"
 )
-# Pfad zur Log-Datei
 log_file_path = os.path.join(
     os.path.dirname(__file__), "..", "..", "logs", f"{PROJECT_NAME}_crawler_output.log"
 )
-# Pfad zur Datei für dauerhaft unerreichbare URLs
 unreachable_urls_file = os.path.join(
     os.path.dirname(__file__), "..", "..", "data", "processed_data", f"{PROJECT_NAME}_docs_unreachable_urls.jsonl"
 )
@@ -36,8 +33,17 @@ IGNORED_EXTENSIONS = (
 
 # Maximale Wiederholungsversuche pro URL
 MAX_RETRIES = 3 
-# Timeout für HTTP-Anfragen in Sekunden
-HTTP_TIMEOUT = 30 # Sekunden (festgelegt, statt MAX_RETRIES * 5, um klarer zu sein)
+# Timeout für HTTP-Anfragen in Sekunden (festgelegt, statt MAX_RETRIES * 5, um klarer zu sein)
+HTTP_TIMEOUT = 30 # Sekunden
+
+# NEU: HTTP-Header für Anfragen
+HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.4896.88 Safari/537.36',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+    'Accept-Language': 'en-US,en;q=0.5',
+    'Connection': 'keep-alive'
+}
+
 
 # Sicherstellen, dass die Zielordner existieren
 os.makedirs(os.path.dirname(jsonl_output_file), exist_ok=True)
@@ -46,11 +52,11 @@ os.makedirs(os.path.dirname(unreachable_urls_file), exist_ok=True)
 
 
 # --- Logging-Setup ---
-logger = logging.getLogger('web_crawler_logger') # Einen eindeutigen Namen für den Logger
+logger = logging.getLogger('web_crawler_logger')
 logger.setLevel(logging.INFO) 
-logger.propagate = False # Verhindert, dass Logs an übergeordnete Logger gesendet werden
+logger.propagate = False 
 
-if not logger.handlers: # Sicherstellen, dass Handler nur einmal hinzugefügt werden
+if not logger.handlers:
     file_handler = logging.FileHandler(log_file_path, encoding='utf-8')
     file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
     logger.addHandler(file_handler)
@@ -62,6 +68,9 @@ urls_to_visit = deque()
 newly_processed_count = 0 
 failed_attempts = {} 
 unreachable_urls = set() 
+
+# NEU: Eine requests.Session für effizientere HTTP-Anfragen
+session = requests.Session()
 
 
 # --- Verbesserte Resume-Logik ---
@@ -141,7 +150,8 @@ while urls_to_visit:
     print(f"Verarbeitet: {total_urls_processed_in_this_run} | Queue: {len(urls_to_visit)} | Neu gesichert: {newly_processed_count} | Gesamt gesichert: {len(visited_urls)}    ", end='\r')
     
     try:
-        response = requests.get(current_url, timeout=HTTP_TIMEOUT) 
+        # NEU: Verwendung der Session und des Headers
+        response = session.get(current_url, timeout=HTTP_TIMEOUT, headers=HEADERS) 
         response.raise_for_status() 
         soup = BeautifulSoup(response.text, 'html.parser')
 
@@ -169,7 +179,7 @@ while urls_to_visit:
                     "url": current_url,
                     "title": page_title,
                     "content": text_content,
-                    "source": f"{PROJECT_NAME}_docs", # Quelle wird jetzt projektspezifisch
+                    "source": f"{PROJECT_NAME}_docs", 
                     "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat()
                 }
 

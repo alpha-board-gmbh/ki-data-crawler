@@ -174,7 +174,9 @@ while urls_to_visit:
             if not main_content_div:
                 main_content_div = soup.find('div', role="main", class_="document")
             if not main_content_div:
-                main_content_div = soup.find('div', id='textblock') # Dies ist ein gängiger Selektor für Doxygen
+                main_content_div = soup.find('div', id='textblock') # Doxygen texte
+            if not main_content_div:
+                main_content_div = soup.find('div', id='contents') # Doxygen mit Tabellen
             
             if not main_content_div:
                 logger.warning(f"Konnte Hauptinhalts-Div für {current_url} nicht finden. Inhalt wird nicht gespeichert.")

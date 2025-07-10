@@ -8,11 +8,13 @@ from collections import deque
 import time
 import logging
 import urllib.robotparser
-import warnings # NEU: warnings-Modul importieren
-from bs4 import XMLParsedAsHTMLWarning # NEU: Spezifische Warnung importieren
+import re # NEU: Für reguläre Ausdrücke
 
-# NEU: Diese Zeilen vor der ersten Nutzung von BeautifulSoup hinzufügen, um XML erstmal zu ignorieren
+# NEU: Warnungen für XMLParsedAsHTMLWarning unterdrücken
+import warnings
+from bs4 import XMLParsedAsHTMLWarning
 warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
+
 
 # --- Projekt-Konfiguration ---
 PROJECT_NAME = "zephyr" # <--- HIER DEN PROJEKTNAMEN FESTLEGEN (z.B. "zephyr", "arduino", "my_company")
@@ -41,6 +43,9 @@ IGNORED_EXTENSIONS = (
 MAX_RETRIES = 3 
 # Timeout für HTTP-Anfragen in Sekunden
 HTTP_TIMEOUT = 30 # Sekunden
+
+# Mindestlänge des Textinhalts (in Zeichen). Anpassen nach Bedarf.
+MIN_CONTENT_LENGTH = 100 
 
 # HTTP-Header für Anfragen
 HEADERS = {
@@ -171,25 +176,24 @@ while urls_to_visit:
 
         # === Hauptinhalts-Extraktion und Speicherung (NUR wenn noch NICHT besucht) ===
         if current_url not in visited_urls: 
+            # Selektoren in der Reihenfolge der Präferenz/Umfassung
             main_content_div = soup.find('div', itemprop="articleBody")
             if not main_content_div:
                 main_content_div = soup.find('div', role="main", class_="document")
             if not main_content_div: 
                 main_content_div = soup.find('div', class_='textblock')
             if not main_content_div: 
-                main_content_div = soup.find('div', class_='contents')
+                main_content_div = soup.find('div', class_='contents') # Für Doxygen Gruppen/Modul-Seiten
             if not main_content_div: 
-                main_content_div = soup.find('div', id='doc-content')
+                main_content_div = soup.find('div', id='doc-content') # Generischer Doxygen-Inhalt
             if not main_content_div: 
-                main_content_div = soup.find('div', id='content')
+                main_content_div = soup.find('div', id='content') # Noch generischerer Fallback
             
-            # NEU: Falls keiner der umfassenden Selektoren greift, versuchen, alle memdoc-Blöcke zu sammeln
-            memdoc_contents = []
+            memdoc_contents = [] # Für den Fall, dass wir memdoc-Blöcke sammeln
             if not main_content_div: # Nur versuchen, wenn bisher kein Haupt-Div gefunden wurde
                 all_memdocs = soup.find_all('div', class_='memdoc')
                 if all_memdocs:
                     for memdoc_div in all_memdocs:
-                        # Versuchen, den memtitle zu finden und vor den memdoc-Inhalt zu stellen
                         memitem_parent = memdoc_div.find_parent('div', class_='memitem')
                         if memitem_parent:
                             memtitle_tag = memitem_parent.find(['h2', 'h3'], class_='memtitle') 
@@ -200,30 +204,108 @@ while urls_to_visit:
                         memdoc_contents.append("\n---\n") # Trennzeichen zwischen einzelnen memdocs
                     
                     if memdoc_contents:
-                        # Signalisiert, dass Inhalt über memdocs gefunden wurde
-                        main_content_div = "MEMDOCS_COLLECTED" 
+                        main_content_div = "MEMDOCS_COLLECTED" # Dummy-Wert, signalisiert Inhalt gefunden
 
 
-            # Entscheidung, ob Inhalt aus main_content_div oder memdoc_contents verwendet wird
             text_content = ""
             page_title = ""
 
             if main_content_div and main_content_div != "MEMDOCS_COLLECTED": # Regulärer Div gefunden
                 text_content = main_content_div.get_text(separator='\n', strip=True)
-                text_content = '\n'.join(line.strip() for line in text_content.splitlines() if line.strip())
-
+                
                 page_title_tag = soup.find('h1')
                 page_title = page_title_tag.get_text(strip=True) if page_title_tag else \
                              (soup.find('title').get_text(strip=True) if soup.find('title') else 'No Title Found')
             elif main_content_div == "MEMDOCS_COLLECTED" and memdoc_contents: # Inhalt aus MemDocs gesammelt
-                text_content = '\n'.join(line.strip() for line in memdoc_contents if line.strip())
+                text_content = '\n'.join(memdoc_contents) # memdoc_contents enthält bereits gestrippte Zeilen und Trenner
                 page_title = soup.find('title').get_text(strip=True) if soup.find('title') else 'No Title Found (MemDocs)'
             else: # Immer noch kein Hauptinhalt gefunden, dies ist eine Warnung
                 logger.warning(f"Konnte Hauptinhalts-Div für {current_url} nicht finden (alle Selektoren fehlgeschlagen). Inhalt wird nicht gespeichert.")
                 visited_urls.add(current_url) 
-                continue # Überspringen Sie den Rest der Verarbeitung für diese URL, da kein relevanter Inhalt gefunden
+                continue # Überspringe den Rest der Verarbeitung für diese URL
 
 
+            # --- NEU HINZUZUFÜGENDE TEXTBEREINIGUNG START ---
+            # 1. Allgemeine Kodierungs- und Sonderzeichenbereinigung
+            text_content = text_content.replace('ïƒ', '') # Entfernt das spezielle Unicode-Zeichen
+            text_content = text_content.replace('â€™', "'") # Korrigiert falsch dekodiertes Apostroph (Right Single Quotation Mark)
+            text_content = text_content.replace('â€œ', '"').replace('â€', '"') # Korrigiert Anführungszeichen (Left/Right Double Quotation Mark)
+            text_content = text_content.replace('â€“', '-') # Korrigiert Gedankenstrich (En Dash)
+            text_content = text_content.replace('â€¢', '-') # Korrigiert Aufzählungszeichen (Bullet)
+            # Weitere häufige Probleme: Unicode Zero Width Space (U+200B) oder Non-breaking Space (U+00A0)
+            text_content = text_content.replace('\u200b', '').replace('\u00a0', ' ')
+            
+            # 2. Spezifische Bereinigung für Doxygen Source-Dateien (.h_source.html, .c_source.html)
+            # Hier müssen wir präziser werden, da die vorherige Regex-Logik nicht alle Fälle abdeckte.
+            if "doxygen/html/" in current_url and "_source.html" in current_url:
+                lines = text_content.splitlines()
+                cleaned_source_lines = []
+                
+                # Muster für Doxygen-Source-Header (Go to ..., Copyright)
+                # und für generierte Fußzeilen (Definition, Dateiname:Zeile)
+                in_doxygen_source_header = True
+                in_doxygen_source_footer = False
+                
+                for line in lines:
+                    stripped_line = line.strip()
+
+                    # Erkennung des Endes des Headers (beginnt nach Copyright, endet vor erstem #ifndef / #define / echtem Code)
+                    if in_doxygen_source_header:
+                        # Findet den Beginn des Copyright-Blocks
+                        if re.match(r'^\d+\s*\/\*.*Copyright \(c\).*', stripped_line) or stripped_line == "Go to the documentation of this file.":
+                            continue # Überspringe diese Zeile
+                        # Ende des Copyright-Blocks, Beginn des eigentlichen Codes
+                        if re.match(r'^\d+\s*#ifndef', stripped_line) or re.match(r'^\d+\s*#define', stripped_line) or re.match(r'^\d+\s*\w+\s+\w+', stripped_line):
+                            in_doxygen_source_header = False
+                            # Wenn es eine Zeilennummer hat, entfernen wir sie hier
+                            if stripped_line and stripped_line[0].isdigit() and (' ' in stripped_line or '\t' in stripped_line):
+                                parts = stripped_line.split(' ', 1)
+                                if len(parts) > 1 and parts[0].isdigit():
+                                    cleaned_source_lines.append(parts[1])
+                                else:
+                                    cleaned_source_lines.append(line)
+                            else:
+                                cleaned_source_lines.append(line)
+                            continue
+                        else:
+                            continue # Überspringe weiterhin Header-Zeilen
+                    
+                    # Logik für Footer (muss nach dem Header-Handling kommen)
+                    # Erkennen des Beginns des generierten Fußzeilenblocks
+                    if re.match(r'^(Definition|Flags|Size)\n', line) or \
+                       re.match(r'^[a-zA-Z_]+\s*$', line) or \
+                       (re.match(r'^.*\.h:[\d]+$', line) and not in_doxygen_source_header): # Dateireferenz ohne Zeilennummer
+                        in_doxygen_source_footer = True
+
+                    if in_doxygen_source_footer:
+                        continue # Überspringe alle Zeilen im Footer
+
+                    # Normale Zeilen verarbeiten
+                    # Entferne nur die Zeilennummern am Anfang
+                    if stripped_line and stripped_line[0].isdigit() and (' ' in stripped_line or '\t' in stripped_line):
+                        parts = stripped_line.split(' ', 1)
+                        if len(parts) > 1 and parts[0].isdigit():
+                            cleaned_source_lines.append(parts[1])
+                        else: # Falls keine Zahl als erster Teil, Originalzeile beibehalten
+                            cleaned_source_lines.append(line)
+                    else:
+                        cleaned_source_lines.append(line)
+                
+                text_content = '\n'.join(cleaned_source_lines)
+                
+                # Zusätzliche Bereinigung von leeren Zeilen nach #ifdef/#endif Blöcken, etc.
+                text_content = '\n'.join(filter(None, text_content.splitlines())).strip()
+
+            # --- ENDE DER TEXTBEREINIGUNG ---
+
+
+            # Mindestlängenprüfung und Speichern des Segments
+            if len(text_content) < MIN_CONTENT_LENGTH:
+                logger.warning(f"Inhalt von {current_url} ist zu kurz ({len(text_content)} Zeichen) oder leer nach Bereinigung. Nicht gespeichert.")
+                visited_urls.add(current_url) 
+                continue 
+            
+            # --- Hier kommt der Aufbau von data_segment und das Speichern in die JSONL-Datei ---
             path_part = urlparse(current_url).path.strip('/').replace('/', '_').replace('.', '_')
             unique_id = path_part if path_part else "homepage"
 
@@ -244,6 +326,8 @@ while urls_to_visit:
             
             if newly_processed_count % 500 == 0: 
                 logger.info(f"Fortschritts-Update: Neu verarbeitete Seiten (im aktuellen Lauf): {newly_processed_count} | URLs in der Warteschlange (urls_to_visit): {len(urls_to_visit)} | Gesamt bereits in Datei (visited_urls): {len(visited_urls)}")
+        
+        # ... (Rest des Codes - Link-Discovery und Error-Hanndling) ...
         
         for link in soup.find_all('a', href=True):
             href = link['href']

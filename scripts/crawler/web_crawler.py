@@ -11,7 +11,7 @@ import urllib.robotparser # NEU: Für robots.txt-Regeln
 
 # --- Projekt-Konfiguration ---
 PROJECT_NAME = "zephyr-docs" # <--- HIER DEN PROJEKTNAMEN FESTLEGEN (z.B. "zephyr", "arduino", "my_company")
-base_url = "https://docs.zephyrproject.org/" # <--- Basis-URL für diesen spezifischen Crawl
+base_url = "https://docs.zephyrproject.org/latest/" # <--- Basis-URL für diesen spezifischen Crawl
 
 # --- Datei- und Ordnerpfade ---
 # Pfad zur JSONL-Ausgabedatei für gesammelte Segmente
@@ -173,7 +173,9 @@ while urls_to_visit:
             main_content_div = soup.find('div', itemprop="articleBody")
             if not main_content_div:
                 main_content_div = soup.find('div', role="main", class_="document")
-
+            if not main_content_div:
+                main_content_div = soup.find('div', id='textblock') # Dies ist ein gängiger Selektor für Doxygen
+            
             if not main_content_div:
                 logger.warning(f"Konnte Hauptinhalts-Div für {current_url} nicht finden. Inhalt wird nicht gespeichert.")
                 visited_urls.add(current_url) 

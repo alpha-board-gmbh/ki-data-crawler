@@ -7,18 +7,22 @@ from urllib.parse import urljoin, urlparse
 from collections import deque
 import time
 import logging
+import urllib.robotparser # NEU: Für robots.txt-Regeln
 
 # --- Projekt-Konfiguration ---
 PROJECT_NAME = "zephyr-docs" # <--- HIER DEN PROJEKTNAMEN FESTLEGEN (z.B. "zephyr", "arduino", "my_company")
 base_url = "https://docs.zephyrproject.org/" # <--- Basis-URL für diesen spezifischen Crawl
 
 # --- Datei- und Ordnerpfade ---
+# Pfad zur JSONL-Ausgabedatei für gesammelte Segmente
 jsonl_output_file = os.path.join(
     os.path.dirname(__file__), "..", "..", "data", "processed_data", f"{PROJECT_NAME}_docs_segments.jsonl"
 )
+# Pfad zur Log-Datei
 log_file_path = os.path.join(
     os.path.dirname(__file__), "..", "..", "logs", f"{PROJECT_NAME}_crawler_output.log"
 )
+# Pfad zur Datei für dauerhaft unerreichbare URLs
 unreachable_urls_file = os.path.join(
     os.path.dirname(__file__), "..", "..", "data", "processed_data", f"{PROJECT_NAME}_docs_unreachable_urls.jsonl"
 )
@@ -33,14 +37,14 @@ IGNORED_EXTENSIONS = (
 
 # Maximale Wiederholungsversuche pro URL
 MAX_RETRIES = 3 
-# Timeout für HTTP-Anfragen in Sekunden (festgelegt, statt MAX_RETRIES * 5, um klarer zu sein)
+# Timeout für HTTP-Anfragen in Sekunden
 HTTP_TIMEOUT = 30 # Sekunden
 
-# NEU: HTTP-Header für Anfragen
+# HTTP-Header für Anfragen
 HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.4896.88 Safari/537.36',
     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-    'Accept-Language': 'en-US,en;q=0.5',
+    'Accept-Language': 'en-US,en;q=0.5', # Angepasst, da Zephyr Doku englisch ist
     'Connection': 'keep-alive'
 }
 
@@ -52,11 +56,11 @@ os.makedirs(os.path.dirname(unreachable_urls_file), exist_ok=True)
 
 
 # --- Logging-Setup ---
-logger = logging.getLogger('web_crawler_logger')
+logger = logging.getLogger('web_crawler_logger') # Einen eindeutigen Namen für den Logger
 logger.setLevel(logging.INFO) 
-logger.propagate = False 
+logger.propagate = False # Verhindert, dass Logs an übergeordnete Logger gesendet werden
 
-if not logger.handlers:
+if not logger.handlers: # Sicherstellen, dass Handler nur einmal hinzugefügt werden
     file_handler = logging.FileHandler(log_file_path, encoding='utf-8')
     file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
     logger.addHandler(file_handler)
@@ -69,8 +73,17 @@ newly_processed_count = 0
 failed_attempts = {} 
 unreachable_urls = set() 
 
-# NEU: Eine requests.Session für effizientere HTTP-Anfragen
+# Verwendung einer requests.Session für effizientere HTTP-Anfragen
 session = requests.Session()
+
+# NEU: Robots.txt Parser initialisieren und laden
+rp = urllib.robotparser.RobotFileParser()
+rp.set_url(urljoin(base_url, 'robots.txt'))
+try:
+    rp.read()
+    logger.info(f"Robots.txt von {urljoin(base_url, 'robots.txt')} erfolgreich geladen.")
+except Exception as e:
+    logger.warning(f"FEHLER beim Laden oder Parsen der robots.txt: {e}. Crawler wird ohne robots.txt-Regeln fortfahren.")
 
 
 # --- Verbesserte Resume-Logik ---
@@ -150,7 +163,6 @@ while urls_to_visit:
     print(f"Verarbeitet: {total_urls_processed_in_this_run} | Queue: {len(urls_to_visit)} | Neu gesichert: {newly_processed_count} | Gesamt gesichert: {len(visited_urls)}    ", end='\r')
     
     try:
-        # NEU: Verwendung der Session und des Headers
         response = session.get(current_url, timeout=HTTP_TIMEOUT, headers=HEADERS) 
         response.raise_for_status() 
         soup = BeautifulSoup(response.text, 'html.parser')
@@ -192,6 +204,7 @@ while urls_to_visit:
                 if newly_processed_count % 500 == 0: 
                     logger.info(f"Fortschritts-Update: Neu verarbeitete Seiten (im aktuellen Lauf): {newly_processed_count} | URLs in der Warteschlange (urls_to_visit): {len(urls_to_visit)} | Gesamt bereits in Datei (visited_urls): {len(visited_urls)}")
         
+        # === Link-Discovery (IMMER ausführen nach erfolgreichem Download & Parse) ===
         for link in soup.find_all('a', href=True):
             href = link['href']
             full_url = urljoin(current_url, href)
@@ -204,9 +217,14 @@ while urls_to_visit:
                 full_url.startswith(base_url) and
                 file_extension not in IGNORED_EXTENSIONS and 
                 "#" not in full_url):
-
-                if full_url not in visited_urls and full_url not in urls_to_visit: 
-                    urls_to_visit.append(full_url)
+                
+                # NEU: Robots.txt-Filter prüfen
+                # rp.can_fetch(User-Agent, URL) prüft, ob der User-Agent die URL crawlen darf
+                if rp.can_fetch(HEADERS['User-Agent'], full_url): 
+                    if full_url not in visited_urls and full_url not in urls_to_visit: 
+                        urls_to_visit.append(full_url)
+                else:
+                    logger.info(f"Link {full_url} wird aufgrund von robots.txt-Regeln nicht gecrawlt.")
     
     except requests.exceptions.RequestException as e:
         logger.error(f"FEHLER beim Crawling (HTTP/Network) von {current_url}: {e}")

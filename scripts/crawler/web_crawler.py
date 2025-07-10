@@ -8,6 +8,11 @@ from collections import deque
 import time
 import logging
 import urllib.robotparser
+import warnings # NEU: warnings-Modul importieren
+from bs4 import XMLParsedAsHTMLWarning # NEU: Spezifische Warnung importieren
+
+# NEU: Diese Zeilen vor der ersten Nutzung von BeautifulSoup hinzufügen, um XML erstmal zu ignorieren
+warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
 
 # --- Projekt-Konfiguration ---
 PROJECT_NAME = "zephyr" # <--- HIER DEN PROJEKTNAMEN FESTLEGEN (z.B. "zephyr", "arduino", "my_company")
